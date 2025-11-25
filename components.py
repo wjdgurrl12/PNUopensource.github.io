@@ -67,8 +67,8 @@ class Board:
         return row * self.cols + col
 
     def is_inbounds(self, col: int, row: int) -> bool:
-        # TODO: Return True if (col,row) is inside the board bounds.
-        pass
+        # 좌표가 0 이상이고, 보드 크기(cols, rows)보다 작은지 검사
+        return 0 <= col < self.cols and 0 <= row < self.rows
 
     def neighbors(self, col: int, row: int) -> List[Tuple[int, int]]:
         # TODO: Return list of valid neighboring coordinates around (col,row).
