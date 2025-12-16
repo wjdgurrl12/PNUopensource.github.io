@@ -32,7 +32,7 @@ class Renderer:
         self.header_font = pygame.font.Font(config.font_name, config.header_font_size)
         self.result_font = pygame.font.Font(config.font_name, config.result_font_size)
 
-    def cell_rect(self, col: int, row: int) -> Rect:
+    def cell_rect(self, col: int, row: int) -> pygame.Rect:
         """Return the rectangle in pixels for the given grid cell."""
         x = config.margin_left + col * config.cell_size
         y = config.margin_top + row * config.cell_size
@@ -54,6 +54,7 @@ class Renderer:
         else:
             base_color = config.color_highlight if highlighted else config.color_cell_hidden
             pygame.draw.rect(self.screen, base_color, rect)
+
             if cell.state.is_flagged:
                 flag_w = max(6, rect.width // 3)
                 flag_h = max(8, rect.height // 2)
@@ -61,14 +62,21 @@ class Renderer:
                 pole_y = rect.top + 4
                 pygame.draw.line(self.screen, config.color_flag, (pole_x, pole_y), (pole_x, pole_y + flag_h), 2)
                 pygame.draw.polygon(
-                    self.screen,
-                    config.color_flag,
-                    [
-                        (pole_x + 2, pole_y),
-                        (pole_x + 2 + flag_w, pole_y + flag_h // 3),
-                        (pole_x + 2, pole_y + flag_h // 2),
-                    ],
-                )
+                self.screen,
+                config.color_flag,
+                [
+                  (pole_x + 2, pole_y),
+                  (pole_x + 2 + flag_w, pole_y + flag_h // 3),
+                  (pole_x + 2, pole_y + flag_h // 2),
+                ],
+            )
+
+            elif getattr(cell.state, "is_question", False):
+            # '?' 텍스트 렌더링
+                q = self.font.render("?", True, config.color_header_text)
+                q_rect = q.get_rect(center=rect.center)
+                self.screen.blit(q, q_rect)
+
         pygame.draw.rect(self.screen, config.color_grid, rect, 1)
 
     def draw_header(self, remaining_mines: int, time_text: str) -> None:
