@@ -21,6 +21,26 @@ fps = 60
 cols = 16
 rows = 16
 num_mines = 40
+# Difficulty presets
+DIFFICULTY_PRESETS = {
+    "EASY": {
+        "cols": 9,
+        "rows": 9,
+        "mines": 10,
+    },
+    "NORMAL": {
+        "cols": 16,
+        "rows": 16,
+        "mines": 40,
+    },
+    "HARD": {
+        "cols": 30,
+        "rows": 16,
+        "mines": 99,
+    },
+}
+
+DEFAULT_DIFFICULTY = "NORMAL"
 
 # Cell size and margins
 cell_size = 32

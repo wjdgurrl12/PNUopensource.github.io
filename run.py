@@ -42,6 +42,7 @@ class Renderer:
         """Draw a single cell, respecting revealed/flagged state and highlight."""
         cell = self.board.cells[self.board.index(col, row)]
         rect = self.cell_rect(col, row)
+
         if cell.state.is_revealed:
             pygame.draw.rect(self.screen, config.color_cell_revealed, rect)
             if cell.state.is_mine:
@@ -69,6 +70,7 @@ class Renderer:
                         (pole_x + 2, pole_y + flag_h // 2),
                     ],
                 )
+
         pygame.draw.rect(self.screen, config.color_grid, rect, 1)
 
     def draw_header(self, remaining_mines: int, time_text: str) -> None:
@@ -84,6 +86,14 @@ class Renderer:
         right_label = self.header_font.render(right_text, True, config.color_header_text)
         self.screen.blit(left_label, (10, 12))
         self.screen.blit(right_label, (config.width - right_label.get_width() - 10, 12))
+
+        # 난이도 안내(선택) - 필요 없으면 지워도 됨
+        diff_label = self.header_font.render(f"Difficulty: {self._diff_text()}", True, config.color_header_text)
+        self.screen.blit(diff_label, (10, 34))
+
+    def _diff_text(self) -> str:
+        # Renderer는 Game을 모르니, config에 current string이 없으면 그냥 빈값
+        return ""
 
     def draw_result_overlay(self, text: str | None) -> None:
         """Draw a semi-transparent overlay with centered result text, if any."""
@@ -116,37 +126,28 @@ class InputController:
         return -1, -1
 
     def handle_mouse(self, pos, button) -> None:
-        # 마우스 좌표를 그리드 좌표로 변환
         col, row = self.pos_to_grid(pos[0], pos[1])
-        
-        # 게임판 밖을 클릭했으면 무시
         if col == -1:
             return
-            
+
         game = self.game
-        
-        # 좌클릭: 셀 열기
+
         if button == config.mouse_left:
-            # 게임 시작 시간 체크 (첫 클릭 시)
             if not game.started:
                 game.started = True
                 game.start_ticks_ms = pygame.time.get_ticks()
             game.board.reveal(col, row)
 
-        # 우클릭: 깃발 꽂기
         elif button == config.mouse_right:
             game.board.toggle_flag(col, row)
-            
-        # 휠클릭: 주변 하이라이트 (이미 열린 셀 주변의 닫힌 셀 표시)
+
         elif button == config.mouse_middle:
-            # 클릭한 셀 주변 이웃 가져오기
             neighbors = game.board.neighbors(col, row)
             game.highlight_targets = {
                 (nc, nr)
                 for (nc, nr) in neighbors
                 if not game.board.cells[game.board.index(nc, nr)].state.is_revealed
             }
-            # 하이라이트 지속 시간 설정
             game.highlight_until_ms = pygame.time.get_ticks() + config.highlight_duration_ms
 
 
@@ -156,29 +157,54 @@ class Game:
     def __init__(self):
         pygame.init()
         pygame.display.set_caption(config.title)
+
+        self.difficulty = config.DEFAULT_DIFFICULTY
+        self._load_difficulty()
+
         self.screen = pygame.display.set_mode(config.display_dimension)
         self.clock = pygame.time.Clock()
-        self.board = Board(config.cols, config.rows, config.num_mines)
+
+        self.board = Board(self.cols, self.rows, self.mines)
         self.renderer = Renderer(self.screen, self.board)
         self.input = InputController(self)
+
         self.highlight_targets = set()
         self.highlight_until_ms = 0
         self.started = False
         self.start_ticks_ms = 0
         self.end_ticks_ms = 0
 
+    def _load_difficulty(self):
+        preset = config.DIFFICULTY_PRESETS[self.difficulty]
+        self.cols = preset["cols"]
+        self.rows = preset["rows"]
+        self.mines = preset["mines"]
+
+        # 난이도에 맞게 화면 크기 갱신
+        config.width = config.margin_left + self.cols * config.cell_size + config.margin_right
+        config.height = config.margin_top + self.rows * config.cell_size + config.margin_bottom
+        config.display_dimension = (config.width, config.height)
+
     def reset(self):
         """Reset the game state and start a new board."""
-        self.board = Board(config.cols, config.rows, config.num_mines)
+        self._load_difficulty()
+        self.screen = pygame.display.set_mode(config.display_dimension)
+
+        self.board = Board(self.cols, self.rows, self.mines)
         self.renderer.board = self.board
+
         self.highlight_targets.clear()
         self.highlight_until_ms = 0
         self.started = False
         self.start_ticks_ms = 0
         self.end_ticks_ms = 0
 
+    def set_difficulty(self, difficulty: str):
+        if difficulty in config.DIFFICULTY_PRESETS:
+            self.difficulty = difficulty
+            self.reset()
+
     def _elapsed_ms(self) -> int:
-        """Return elapsed time in milliseconds (stops when game ends)."""
         if not self.started:
             return 0
         if self.end_ticks_ms:
@@ -186,14 +212,12 @@ class Game:
         return pygame.time.get_ticks() - self.start_ticks_ms
 
     def _format_time(self, ms: int) -> str:
-        """Format milliseconds as mm:ss string."""
         total_seconds = ms // 1000
         minutes = total_seconds // 60
         seconds = total_seconds % 60
         return f"{minutes:02d}:{seconds:02d}"
 
     def _result_text(self) -> str | None:
-        """Return result label to display, or None if game continues."""
         if self.board.game_over:
             return "GAME OVER"
         if self.board.win:
@@ -201,40 +225,53 @@ class Game:
         return None
 
     def draw(self):
-        """Render one frame: header, grid, result overlay."""
         if pygame.time.get_ticks() > self.highlight_until_ms and self.highlight_targets:
             self.highlight_targets.clear()
+
         self.screen.fill(config.color_bg)
-        remaining = max(0, config.num_mines - self.board.flagged_count())
+
+        # 난이도 반영된 지뢰 수로 remaining 계산 (중요)
+        remaining = max(0, self.mines - self.board.flagged_count())
+
         time_text = self._format_time(self._elapsed_ms())
         self.renderer.draw_header(remaining, time_text)
+
         now = pygame.time.get_ticks()
         for r in range(self.board.rows):
             for c in range(self.board.cols):
                 highlighted = (now <= self.highlight_until_ms) and ((c, r) in self.highlight_targets)
                 self.renderer.draw_cell(c, r, highlighted)
+
         self.renderer.draw_result_overlay(self._result_text())
         pygame.display.flip()
 
     def run_step(self) -> bool:
-        """Process inputs, update time, draw, and tick the clock once."""
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False
+
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_r:
                     self.reset()
+                elif event.key == pygame.K_1:
+                    self.set_difficulty("EASY")
+                elif event.key == pygame.K_2:
+                    self.set_difficulty("NORMAL")
+                elif event.key == pygame.K_3:
+                    self.set_difficulty("HARD")
+
             if event.type == pygame.MOUSEBUTTONDOWN:
                 self.input.handle_mouse(event.pos, event.button)
+
         if (self.board.game_over or self.board.win) and self.started and not self.end_ticks_ms:
             self.end_ticks_ms = pygame.time.get_ticks()
+
         self.draw()
         self.clock.tick(config.fps)
         return True
 
 
 def main() -> int:
-    """Application entrypoint: run the main loop until quit."""
     game = Game()
     running = True
     while running:
