@@ -78,7 +78,17 @@ class Renderer:
         overlay.fill((0, 0, 0, config.result_overlay_alpha))
         self.screen.blit(overlay, (0, 0))
         label = self.result_font.render(text, True, config.color_result)
-        self.screen.blit(label, label.get_rect(center=(config.width // 2, config.height // 2)))
+        rect = label.get_rect(center=(config.width // 2, config.height // 2))
+        self.screen.blit(label, rect)
+
+    def draw_pause_overlay(self) -> None:
+        overlay = pygame.Surface((config.width, config.height), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 120))
+        self.screen.blit(overlay, (0, 0))
+
+        label = self.result_font.render("PAUSED", True, config.color_result)
+        rect = label.get_rect(center=(config.width // 2, config.height // 2))
+        self.screen.blit(label, rect)
 
 
 class InputController:
@@ -115,7 +125,6 @@ class Game:
     def __init__(self):
         pygame.init()
         pygame.display.set_caption(config.title)
-
         self.clock = pygame.time.Clock()
 
         # Difficulty (#1)
@@ -127,28 +136,36 @@ class Game:
         self.renderer = Renderer(self.screen, self.board)
         self.input = InputController(self)
 
-        # State
+        # Timing / state
         self.started = False
         self.start_ticks_ms = 0
         self.end_ticks_ms = 0
-        self.highlight_targets = set()
-        self.highlight_until_ms = 0
 
         # Hint (#2)
         self.hint_used = False
+        self.highlight_targets = set()
+        self.highlight_until_ms = 0
 
         # High score (#3)
         self.best_ms = self._load_best_time()
 
+        # Pause (#4)
+        self.paused = False
+        self.pause_start_ms = 0
+        self.paused_accum_ms = 0
+
+    # -------------------- #1 Difficulty --------------------
     def _load_difficulty(self):
         preset = config.DIFFICULTY_PRESETS[self.difficulty]
         self.cols = preset["cols"]
         self.rows = preset["rows"]
         self.mines = preset["mines"]
 
+        # keep config in sync (legacy refs)
         config.cols = self.cols
         config.rows = self.rows
         config.num_mines = self.mines
+
         config.width = config.margin_left + self.cols * config.cell_size + config.margin_right
         config.height = config.margin_top + self.rows * config.cell_size + config.margin_bottom
         config.display_dimension = (config.width, config.height)
@@ -158,6 +175,7 @@ class Game:
             self.difficulty = difficulty
             self.reset()
 
+    # -------------------- #2 Hint --------------------
     def use_hint(self):
         if self.hint_used or self.board.game_over or self.board.win:
             return
@@ -176,43 +194,85 @@ class Game:
         self.highlight_until_ms = pygame.time.get_ticks() + 2000
         self.hint_used = True
 
+    # -------------------- #3 High score --------------------
     def _load_best_time(self):
         if not os.path.exists("best_time.json"):
             return None
         try:
-            with open("best_time.json", "r") as f:
+            with open("best_time.json", "r", encoding="utf-8") as f:
                 return json.load(f).get("best_ms")
         except Exception:
             return None
 
     def _save_best_time(self, ms):
-        with open("best_time.json", "w") as f:
+        with open("best_time.json", "w", encoding="utf-8") as f:
             json.dump({"best_ms": ms}, f)
 
+    # -------------------- #4 Pause --------------------
+    def toggle_pause(self):
+        # 시작 전 / 종료 후에는 pause 토글 의미 없음
+        if not self.started or self.board.game_over or self.board.win:
+            return
+
+        now = pygame.time.get_ticks()
+        if not self.paused:
+            self.paused = True
+            self.pause_start_ms = now
+        else:
+            self.paused = False
+            self.paused_accum_ms += now - self.pause_start_ms
+
+    # -------------------- Shared --------------------
     def reset(self):
         self._load_difficulty()
         self.screen = pygame.display.set_mode(config.display_dimension)
+
         self.board = Board(self.cols, self.rows, self.mines)
         self.renderer.board = self.board
+
         self.started = False
         self.start_ticks_ms = 0
         self.end_ticks_ms = 0
+
         self.hint_used = False
+        self.highlight_targets.clear()
+        self.highlight_until_ms = 0
+
+        self.paused = False
+        self.pause_start_ms = 0
+        self.paused_accum_ms = 0
 
     def _elapsed_ms(self):
         if not self.started:
             return 0
+
+        # 게임이 끝난 경우: end_ticks 기준 (pause 제외)
         if self.end_ticks_ms:
-            return self.end_ticks_ms - self.start_ticks_ms
-        return pygame.time.get_ticks() - self.start_ticks_ms
+            return self.end_ticks_ms - self.start_ticks_ms - self.paused_accum_ms
+
+        now = pygame.time.get_ticks()
+
+        # pause 중: pause 시작 시점에서 시간 멈춤
+        if self.paused:
+            return self.pause_start_ms - self.start_ticks_ms - self.paused_accum_ms
+
+        return now - self.start_ticks_ms - self.paused_accum_ms
 
     def _format_time(self, ms):
-        s = ms // 1000
+        s = max(0, ms) // 1000
         return f"{s//60:02d}:{s%60:02d}"
+
+    def _result_text(self):
+        if self.board.game_over:
+            return "GAME OVER"
+        if self.board.win:
+            return "GAME CLEAR"
+        return None
 
     def draw(self):
         self.screen.fill(config.color_bg)
 
+        # hint highlight expire
         if pygame.time.get_ticks() > self.highlight_until_ms:
             self.highlight_targets.clear()
 
@@ -226,13 +286,17 @@ class Game:
             for c in range(self.board.cols):
                 self.renderer.draw_cell(c, r, (c, r) in self.highlight_targets)
 
-        self.renderer.draw_result_overlay("GAME CLEAR" if self.board.win else "GAME OVER" if self.board.game_over else None)
+        self.renderer.draw_result_overlay(self._result_text())
+        if self.paused:
+            self.renderer.draw_pause_overlay()
+
         pygame.display.flip()
 
     def run_step(self):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False
+
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_r:
                     self.reset()
@@ -244,14 +308,20 @@ class Game:
                     self.set_difficulty("HARD")
                 elif event.key == pygame.K_h:
                     self.use_hint()
-            if event.type == pygame.MOUSEBUTTONDOWN:
+                elif event.key == pygame.K_p:
+                    self.toggle_pause()
+
+            # pause 상태에서는 클릭 무시
+            if event.type == pygame.MOUSEBUTTONDOWN and not self.paused:
                 self.input.handle_mouse(event.pos, event.button)
 
+        # 게임 종료 시 end_ticks 고정
         if (self.board.game_over or self.board.win) and self.started and not self.end_ticks_ms:
             self.end_ticks_ms = pygame.time.get_ticks()
 
+        # win 시 best time 갱신 (pause 제외된 elapsed 사용)
         if self.board.win and self.end_ticks_ms:
-            elapsed = self.end_ticks_ms - self.start_ticks_ms
+            elapsed = self._elapsed_ms()
             if self.best_ms is None or elapsed < self.best_ms:
                 self.best_ms = elapsed
                 self._save_best_time(elapsed)
