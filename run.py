@@ -32,7 +32,7 @@ class Renderer:
         self.header_font = pygame.font.Font(config.font_name, config.header_font_size)
         self.result_font = pygame.font.Font(config.font_name, config.result_font_size)
 
-    def cell_rect(self, col: int, row: int) -> Rect:
+    def cell_rect(self, col: int, row: int) -> pygame.Rect:
         """Return the rectangle in pixels for the given grid cell."""
         x = config.margin_left + col * config.cell_size
         y = config.margin_top + row * config.cell_size
@@ -158,7 +158,10 @@ class Game:
         pygame.display.set_caption(config.title)
         self.screen = pygame.display.set_mode(config.display_dimension)
         self.clock = pygame.time.Clock()
-        self.board = Board(config.cols, config.rows, config.num_mines)
+        self.difficulty = config.DEFAULT_DIFFICULTY
+        self._load_difficulty()
+        self.screen = pygame.display.set_mode(config.display_dimension)
+        self.board = Board(self.cols, self.rows, self.mines)
         self.renderer = Renderer(self.screen, self.board)
         self.input = InputController(self)
         self.highlight_targets = set()
@@ -166,10 +169,28 @@ class Game:
         self.started = False
         self.start_ticks_ms = 0
         self.end_ticks_ms = 0
+    def _load_difficulty(self):
+        preset = config.DIFFICULTY_PRESETS[self.difficulty]
 
+        self.cols = preset["cols"]
+        self.rows = preset["rows"]
+        self.mines = preset["mines"]
+
+        config.cols = self.cols
+        config.rows = self.rows
+        config.num_mines = self.mines
+        config.width = config.margin_left + self.cols * config.cell_size + config.margin_right
+        config.height = config.margin_top + self.rows * config.cell_size + config.margin_bottom
+        config.display_dimension = (config.width, config.height)
+    def set_difficulty(self, difficulty: str):
+        if difficulty in config.DIFFICULTY_PRESETS:
+         self.difficulty = difficulty
+         self.reset()
     def reset(self):
         """Reset the game state and start a new board."""
-        self.board = Board(config.cols, config.rows, config.num_mines)
+        self._load_difficulty()
+        self.screen = pygame.display.set_mode(config.display_dimension)
+        self.board = Board(self.cols, self.rows, self.mines)
         self.renderer.board = self.board
         self.highlight_targets.clear()
         self.highlight_until_ms = 0
@@ -224,6 +245,12 @@ class Game:
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_r:
                     self.reset()
+                elif event.key == pygame.K_1:
+                    self.set_difficulty("EASY")
+                elif event.key == pygame.K_2:
+                    self.set_difficulty("NORMAL")
+                elif event.key == pygame.K_3:
+                    self.set_difficulty("HARD")
             if event.type == pygame.MOUSEBUTTONDOWN:
                 self.input.handle_mouse(event.pos, event.button)
         if (self.board.game_over or self.board.win) and self.started and not self.end_ticks_ms:
