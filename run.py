@@ -12,7 +12,7 @@ The logic lives in components.Board; this module should not implement rules.
 import sys
 
 import pygame
-
+import random
 import config
 from components import Board
 from pygame.locals import Rect
@@ -32,7 +32,7 @@ class Renderer:
         self.header_font = pygame.font.Font(config.font_name, config.header_font_size)
         self.result_font = pygame.font.Font(config.font_name, config.result_font_size)
 
-    def cell_rect(self, col: int, row: int) -> Rect:
+    def cell_rect(self, col: int, row: int) -> pygame.Rect:
         """Return the rectangle in pixels for the given grid cell."""
         x = config.margin_left + col * config.cell_size
         y = config.margin_top + row * config.cell_size
@@ -164,9 +164,33 @@ class Game:
         self.highlight_targets = set()
         self.highlight_until_ms = 0
         self.started = False
+        self.hint_used = False
         self.start_ticks_ms = 0
         self.end_ticks_ms = 0
+    def use_hint(self):
+    # 이미 사용했거나 게임 끝났으면 무시
+        if self.hint_used or self.board.game_over or self.board.win:
+         return
 
+        safe_cells = []
+        for r in range(self.board.rows):
+         for c in range(self.board.cols):
+            cell = self.board.cells[self.board.index(c, r)]
+            if not cell.state.is_revealed and not cell.state.is_mine:
+                safe_cells.append((c, r))
+
+    # 안전 칸이 없으면 무시
+        if not safe_cells:
+         return
+
+    # 안전한 칸 하나 선택
+        c, r = random.choice(safe_cells)
+
+    # 2초간 하이라이트
+        self.highlight_targets = {(c, r)}
+        self.highlight_until_ms = pygame.time.get_ticks() + 2000
+
+        self.hint_used = True
     def reset(self):
         """Reset the game state and start a new board."""
         self.board = Board(config.cols, config.rows, config.num_mines)
@@ -174,6 +198,7 @@ class Game:
         self.highlight_targets.clear()
         self.highlight_until_ms = 0
         self.started = False
+        self.hint_used = False
         self.start_ticks_ms = 0
         self.end_ticks_ms = 0
 
@@ -224,6 +249,8 @@ class Game:
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_r:
                     self.reset()
+                elif event.key == pygame.K_h:
+                    self.use_hint()
             if event.type == pygame.MOUSEBUTTONDOWN:
                 self.input.handle_mouse(event.pos, event.button)
         if (self.board.game_over or self.board.win) and self.started and not self.end_ticks_ms:
