@@ -14,6 +14,7 @@ import sys
 import pygame
 
 import config
+import random
 from components import Board
 from pygame.locals import Rect
 
@@ -160,7 +161,7 @@ class Game:
 
         self.difficulty = config.DEFAULT_DIFFICULTY
         self._load_difficulty()
-
+        self.hint_used = False
         self.screen = pygame.display.set_mode(config.display_dimension)
         self.clock = pygame.time.Clock()
 
@@ -184,7 +185,25 @@ class Game:
         config.width = config.margin_left + self.cols * config.cell_size + config.margin_right
         config.height = config.margin_top + self.rows * config.cell_size + config.margin_bottom
         config.display_dimension = (config.width, config.height)
-
+    def use_hint(self):
+    # 이미 힌트 사용했거나 게임 종료면 무시
+     if self.hint_used or self.board.game_over or self.board.win:
+        return
+     safe_cells = []
+     for r in range(self.board.rows):
+        for c in range(self.board.cols):
+            cell = self.board.cells[self.board.index(c, r)]
+            if (not cell.state.is_revealed) and (not cell.state.is_mine):
+                safe_cells.append((c, r))
+    # 안전 칸이 없으면 종료
+     if not safe_cells:
+        return
+    # 안전한 칸 하나 선택
+     c, r = random.choice(safe_cells)
+    # 하이라이트로 표시 (2초)
+     self.highlight_targets = {(c, r)}
+     self.highlight_until_ms = pygame.time.get_ticks() + 2000
+     self.hint_used = True
     def reset(self):
         """Reset the game state and start a new board."""
         self._load_difficulty()
@@ -192,7 +211,7 @@ class Game:
 
         self.board = Board(self.cols, self.rows, self.mines)
         self.renderer.board = self.board
-
+        self.hint_used = False
         self.highlight_targets.clear()
         self.highlight_until_ms = 0
         self.started = False
@@ -251,14 +270,16 @@ class Game:
                 return False
 
             if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_r:
-                    self.reset()
-                elif event.key == pygame.K_1:
-                    self.set_difficulty("EASY")
-                elif event.key == pygame.K_2:
-                    self.set_difficulty("NORMAL")
-                elif event.key == pygame.K_3:
-                    self.set_difficulty("HARD")
+             if event.key == pygame.K_r:
+              self.reset()
+             elif event.key == pygame.K_1:
+              self.set_difficulty("EASY")
+             elif event.key == pygame.K_2:
+              self.set_difficulty("NORMAL")
+             elif event.key == pygame.K_3:
+              self.set_difficulty("HARD")
+             elif event.key == pygame.K_h:
+              self.use_hint()
 
             if event.type == pygame.MOUSEBUTTONDOWN:
                 self.input.handle_mouse(event.pos, event.button)
