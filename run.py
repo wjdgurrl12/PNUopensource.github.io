@@ -201,7 +201,7 @@ class Game:
     def use_hint(self):
         # 이미 사용했거나 게임 끝났으면 무시
         if self.hint_used or self.board.game_over or self.board.win:
-            return
+         return
 
         safe_cells = []
         for r in range(self.board.rows):
