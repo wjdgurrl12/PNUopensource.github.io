@@ -32,7 +32,7 @@ class Renderer:
         self.header_font = pygame.font.Font(config.font_name, config.header_font_size)
         self.result_font = pygame.font.Font(config.font_name, config.result_font_size)
 
-    def cell_rect(self, col: int, row: int) -> Rect:
+    def cell_rect(self, col: int, row: int) -> pygame.Rect:
         """Return the rectangle in pixels for the given grid cell."""
         x = config.margin_left + col * config.cell_size
         y = config.margin_top + row * config.cell_size
@@ -93,6 +93,14 @@ class Renderer:
         overlay.fill((0, 0, 0, config.result_overlay_alpha))
         self.screen.blit(overlay, (0, 0))
         label = self.result_font.render(text, True, config.color_result)
+        rect = label.get_rect(center=(config.width // 2, config.height // 2))
+        self.screen.blit(label, rect)
+    def draw_pause_overlay(self):
+        overlay = pygame.Surface((config.width, config.height), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 120))
+        self.screen.blit(overlay, (0, 0))
+
+        label = self.result_font.render("PAUSED", True, config.color_result)
         rect = label.get_rect(center=(config.width // 2, config.height // 2))
         self.screen.blit(label, rect)
 
@@ -166,6 +174,22 @@ class Game:
         self.started = False
         self.start_ticks_ms = 0
         self.end_ticks_ms = 0
+        self.paused = False
+        self.pause_start_ms = 0
+        self.paused_accum_ms = 0
+
+    def toggle_pause(self):
+        if not self.started or self.board.game_over or self.board.win:
+         return
+
+        now = pygame.time.get_ticks()
+
+        if not self.paused:
+         self.paused = True
+         self.pause_start_ms = now
+        else:
+         self.paused = False
+         self.paused_accum_ms += now - self.pause_start_ms
 
     def reset(self):
         """Reset the game state and start a new board."""
@@ -177,13 +201,19 @@ class Game:
         self.start_ticks_ms = 0
         self.end_ticks_ms = 0
 
-    def _elapsed_ms(self) -> int:
-        """Return elapsed time in milliseconds (stops when game ends)."""
+    def _elapsed_ms(self):
         if not self.started:
-            return 0
+         return 0
+
         if self.end_ticks_ms:
-            return self.end_ticks_ms - self.start_ticks_ms
-        return pygame.time.get_ticks() - self.start_ticks_ms
+         return self.end_ticks_ms - self.start_ticks_ms - self.paused_accum_ms
+
+        now = pygame.time.get_ticks()
+
+        if self.paused:
+         return self.pause_start_ms - self.start_ticks_ms - self.paused_accum_ms
+
+        return now - self.start_ticks_ms - self.paused_accum_ms
 
     def _format_time(self, ms: int) -> str:
         """Format milliseconds as mm:ss string."""
@@ -214,7 +244,10 @@ class Game:
                 highlighted = (now <= self.highlight_until_ms) and ((c, r) in self.highlight_targets)
                 self.renderer.draw_cell(c, r, highlighted)
         self.renderer.draw_result_overlay(self._result_text())
+        if self.paused:
+            self.renderer.draw_pause_overlay()
         pygame.display.flip()
+
 
     def run_step(self) -> bool:
         """Process inputs, update time, draw, and tick the clock once."""
@@ -224,8 +257,10 @@ class Game:
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_r:
                     self.reset()
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                self.input.handle_mouse(event.pos, event.button)
+                elif event.key == pygame.K_p:
+                    self.toggle_pause()
+            if event.type == pygame.MOUSEBUTTONDOWN and not self.paused:
+                    self.input.handle_mouse(event.pos, event.button)
         if (self.board.game_over or self.board.win) and self.started and not self.end_ticks_ms:
             self.end_ticks_ms = pygame.time.get_ticks()
         self.draw()
