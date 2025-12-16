@@ -101,3 +101,5 @@ result_overlay_alpha = 120
 # Misc
 title = "Minesweeper"
 
+# High score (best time) 저장 파일 (로컬)
+best_time_file = "best_time.json"
