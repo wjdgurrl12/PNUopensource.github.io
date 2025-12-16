@@ -12,7 +12,8 @@ The logic lives in components.Board; this module should not implement rules.
 import sys
 
 import pygame
-
+import json
+import os
 import config
 from components import Board
 from pygame.locals import Rect
@@ -32,7 +33,7 @@ class Renderer:
         self.header_font = pygame.font.Font(config.font_name, config.header_font_size)
         self.result_font = pygame.font.Font(config.font_name, config.result_font_size)
 
-    def cell_rect(self, col: int, row: int) -> Rect:
+    def cell_rect(self, col: int, row: int) -> pygame.Rect:
         """Return the rectangle in pixels for the given grid cell."""
         x = config.margin_left + col * config.cell_size
         y = config.margin_top + row * config.cell_size
@@ -71,7 +72,7 @@ class Renderer:
                 )
         pygame.draw.rect(self.screen, config.color_grid, rect, 1)
 
-    def draw_header(self, remaining_mines: int, time_text: str) -> None:
+    def draw_header(self, remaining_mines: int, time_text: str, best_text: str) -> None:
         """Draw the header bar containing remaining mines and elapsed time."""
         pygame.draw.rect(
             self.screen,
@@ -79,10 +80,15 @@ class Renderer:
             Rect(0, 0, config.width, config.margin_top - 4),
         )
         left_text = f"Mines: {remaining_mines}"
+        mid_text = f"Best: {best_text}"
         right_text = f"Time: {time_text}"
+
         left_label = self.header_font.render(left_text, True, config.color_header_text)
+        mid_label = self.header_font.render(mid_text, True, config.color_header_text)
         right_label = self.header_font.render(right_text, True, config.color_header_text)
+
         self.screen.blit(left_label, (10, 12))
+        self.screen.blit(mid_label, (10, 36))
         self.screen.blit(right_label, (config.width - right_label.get_width() - 10, 12))
 
     def draw_result_overlay(self, text: str | None) -> None:
@@ -166,7 +172,20 @@ class Game:
         self.started = False
         self.start_ticks_ms = 0
         self.end_ticks_ms = 0
-
+        self.best_ms = self._load_best_time()
+    
+    def _load_best_time(self):
+        if not os.path.exists("best_time.json"):
+          return None
+        try:
+          with open("best_time.json", "r") as f:
+            data = json.load(f)
+            return data.get("best_ms")
+        except Exception:
+          return None
+    def _save_best_time(self, ms):
+        with open("best_time.json", "w") as f:
+          json.dump({"best_ms": ms}, f)
     def reset(self):
         """Reset the game state and start a new board."""
         self.board = Board(config.cols, config.rows, config.num_mines)
@@ -207,7 +226,11 @@ class Game:
         self.screen.fill(config.color_bg)
         remaining = max(0, config.num_mines - self.board.flagged_count())
         time_text = self._format_time(self._elapsed_ms())
-        self.renderer.draw_header(remaining, time_text)
+        best_text = "--:--"
+        if self.best_ms is not None:
+           best_text = self._format_time(self.best_ms)
+        self.renderer.draw_header(remaining, time_text, best_text)
+
         now = pygame.time.get_ticks()
         for r in range(self.board.rows):
             for c in range(self.board.cols):
@@ -228,6 +251,12 @@ class Game:
                 self.input.handle_mouse(event.pos, event.button)
         if (self.board.game_over or self.board.win) and self.started and not self.end_ticks_ms:
             self.end_ticks_ms = pygame.time.get_ticks()
+        # 클리어 시 하이스코어 갱신
+            if self.board.win:
+              elapsed = self.end_ticks_ms - self.start_ticks_ms
+              if self.best_ms is None or elapsed < self.best_ms:
+                self.best_ms = elapsed
+                self._save_best_time(elapsed)
         self.draw()
         self.clock.tick(config.fps)
         return True
