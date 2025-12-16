@@ -11,6 +11,8 @@ from components import Board
 from pygame.locals import Rect
 
 
+# ============================ Renderer ============================
+
 class Renderer:
     def __init__(self, screen: pygame.Surface, board: Board):
         self.screen = screen
@@ -31,7 +33,12 @@ class Renderer:
         if cell.state.is_revealed:
             pygame.draw.rect(self.screen, config.color_cell_revealed, rect)
             if cell.state.is_mine:
-                pygame.draw.circle(self.screen, config.color_cell_mine, rect.center, rect.width // 4)
+                pygame.draw.circle(
+                    self.screen,
+                    config.color_cell_mine,
+                    rect.center,
+                    rect.width // 4,
+                )
             elif cell.state.adjacent > 0:
                 label = self.font.render(
                     str(cell.state.adjacent),
@@ -40,19 +47,37 @@ class Renderer:
                 )
                 self.screen.blit(label, label.get_rect(center=rect.center))
         else:
-            pygame.draw.rect(
-                self.screen,
-                config.color_highlight if highlighted else config.color_cell_hidden,
-                rect,
-            )
+            base_color = config.color_highlight if highlighted else config.color_cell_hidden
+            pygame.draw.rect(self.screen, base_color, rect)
+
+            # FLAG
             if cell.state.is_flagged:
+                flag_w = max(6, rect.width // 3)
+                flag_h = max(8, rect.height // 2)
+                pole_x = rect.left + rect.width // 3
+                pole_y = rect.top + 4
+
                 pygame.draw.line(
                     self.screen,
                     config.color_flag,
-                    (rect.centerx, rect.top + 4),
-                    (rect.centerx, rect.bottom - 4),
+                    (pole_x, pole_y),
+                    (pole_x, pole_y + flag_h),
                     2,
                 )
+                pygame.draw.polygon(
+                    self.screen,
+                    config.color_flag,
+                    [
+                        (pole_x + 2, pole_y),
+                        (pole_x + 2 + flag_w, pole_y + flag_h // 3),
+                        (pole_x + 2, pole_y + flag_h // 2),
+                    ],
+                )
+
+            # QUESTION MARK
+            elif cell.state.is_question:
+                q = self.font.render("?", True, config.color_header_text)
+                self.screen.blit(q, q.get_rect(center=rect.center))
 
         pygame.draw.rect(self.screen, config.color_grid, rect, 1)
 
@@ -78,18 +103,17 @@ class Renderer:
         overlay.fill((0, 0, 0, config.result_overlay_alpha))
         self.screen.blit(overlay, (0, 0))
         label = self.result_font.render(text, True, config.color_result)
-        rect = label.get_rect(center=(config.width // 2, config.height // 2))
-        self.screen.blit(label, rect)
+        self.screen.blit(label, label.get_rect(center=(config.width // 2, config.height // 2)))
 
     def draw_pause_overlay(self) -> None:
         overlay = pygame.Surface((config.width, config.height), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 120))
         self.screen.blit(overlay, (0, 0))
-
         label = self.result_font.render("PAUSED", True, config.color_result)
-        rect = label.get_rect(center=(config.width // 2, config.height // 2))
-        self.screen.blit(label, rect)
+        self.screen.blit(label, label.get_rect(center=(config.width // 2, config.height // 2)))
 
+
+# ============================ Input ============================
 
 class InputController:
     def __init__(self, game: "Game"):
@@ -121,6 +145,8 @@ class InputController:
             game.board.toggle_flag(col, row)
 
 
+# ============================ Game ============================
+
 class Game:
     def __init__(self):
         pygame.init()
@@ -136,7 +162,7 @@ class Game:
         self.renderer = Renderer(self.screen, self.board)
         self.input = InputController(self)
 
-        # Timing / state
+        # State / timing
         self.started = False
         self.start_ticks_ms = 0
         self.end_ticks_ms = 0
@@ -154,18 +180,16 @@ class Game:
         self.pause_start_ms = 0
         self.paused_accum_ms = 0
 
-    # -------------------- #1 Difficulty --------------------
+    # -------- Difficulty --------
     def _load_difficulty(self):
         preset = config.DIFFICULTY_PRESETS[self.difficulty]
         self.cols = preset["cols"]
         self.rows = preset["rows"]
         self.mines = preset["mines"]
 
-        # keep config in sync (legacy refs)
         config.cols = self.cols
         config.rows = self.rows
         config.num_mines = self.mines
-
         config.width = config.margin_left + self.cols * config.cell_size + config.margin_right
         config.height = config.margin_top + self.rows * config.cell_size + config.margin_bottom
         config.display_dimension = (config.width, config.height)
@@ -175,7 +199,7 @@ class Game:
             self.difficulty = difficulty
             self.reset()
 
-    # -------------------- #2 Hint --------------------
+    # -------- Hint --------
     def use_hint(self):
         if self.hint_used or self.board.game_over or self.board.win:
             return
@@ -194,7 +218,7 @@ class Game:
         self.highlight_until_ms = pygame.time.get_ticks() + 2000
         self.hint_used = True
 
-    # -------------------- #3 High score --------------------
+    # -------- High score --------
     def _load_best_time(self):
         if not os.path.exists("best_time.json"):
             return None
@@ -208,9 +232,8 @@ class Game:
         with open("best_time.json", "w", encoding="utf-8") as f:
             json.dump({"best_ms": ms}, f)
 
-    # -------------------- #4 Pause --------------------
+    # -------- Pause --------
     def toggle_pause(self):
-        # 시작 전 / 종료 후에는 pause 토글 의미 없음
         if not self.started or self.board.game_over or self.board.win:
             return
 
@@ -222,11 +245,10 @@ class Game:
             self.paused = False
             self.paused_accum_ms += now - self.pause_start_ms
 
-    # -------------------- Shared --------------------
+    # -------- Shared --------
     def reset(self):
         self._load_difficulty()
         self.screen = pygame.display.set_mode(config.display_dimension)
-
         self.board = Board(self.cols, self.rows, self.mines)
         self.renderer.board = self.board
 
@@ -246,13 +268,10 @@ class Game:
         if not self.started:
             return 0
 
-        # 게임이 끝난 경우: end_ticks 기준 (pause 제외)
         if self.end_ticks_ms:
             return self.end_ticks_ms - self.start_ticks_ms - self.paused_accum_ms
 
         now = pygame.time.get_ticks()
-
-        # pause 중: pause 시작 시점에서 시간 멈춤
         if self.paused:
             return self.pause_start_ms - self.start_ticks_ms - self.paused_accum_ms
 
@@ -272,7 +291,6 @@ class Game:
     def draw(self):
         self.screen.fill(config.color_bg)
 
-        # hint highlight expire
         if pygame.time.get_ticks() > self.highlight_until_ms:
             self.highlight_targets.clear()
 
@@ -311,15 +329,12 @@ class Game:
                 elif event.key == pygame.K_p:
                     self.toggle_pause()
 
-            # pause 상태에서는 클릭 무시
             if event.type == pygame.MOUSEBUTTONDOWN and not self.paused:
                 self.input.handle_mouse(event.pos, event.button)
 
-        # 게임 종료 시 end_ticks 고정
         if (self.board.game_over or self.board.win) and self.started and not self.end_ticks_ms:
             self.end_ticks_ms = pygame.time.get_ticks()
 
-        # win 시 best time 갱신 (pause 제외된 elapsed 사용)
         if self.board.win and self.end_ticks_ms:
             elapsed = self._elapsed_ms()
             if self.best_ms is None or elapsed < self.best_ms:
