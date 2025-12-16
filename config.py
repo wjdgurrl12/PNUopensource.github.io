@@ -81,3 +81,27 @@ result_overlay_alpha = 120
 # Misc
 title = "Minesweeper"
 
+DIFFICULTY_PRESETS = {
+    "EASY": {
+        "cols": 9,
+        "rows": 9,
+        "mines": 10,
+    },
+    "NORMAL": {
+        "cols": 16,
+        "rows": 16,
+        "mines": 40,
+    },
+    "HARD": {
+        "cols": 30,
+        "rows": 16,
+        "mines": 99,
+    },
+}
+
+DEFAULT_DIFFICULTY = "NORMAL"
+
+# Active grid values (will be overwritten by Game)
+cols = DIFFICULTY_PRESETS[DEFAULT_DIFFICULTY]["cols"]
+rows = DIFFICULTY_PRESETS[DEFAULT_DIFFICULTY]["rows"]
+num_mines = DIFFICULTY_PRESETS[DEFAULT_DIFFICULTY]["mines"]
