@@ -81,14 +81,15 @@ class Renderer:
         rect = label.get_rect(center=(config.width // 2, config.height // 2))
         self.screen.blit(label, rect)
 
-    def draw_pause_overlay(self) -> None:
-        overlay = pygame.Surface((config.width, config.height), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, 120))
-        self.screen.blit(overlay, (0, 0))
+    def draw_pause_overlay(self, text: str) -> None:
+       overlay = pygame.Surface((config.width, config.height), pygame.SRCALPHA)
+       overlay.fill((0, 0, 0, 120))
+       self.screen.blit(overlay, (0, 0))
 
-        label = self.result_font.render("PAUSED", True, config.color_result)
-        rect = label.get_rect(center=(config.width // 2, config.height // 2))
-        self.screen.blit(label, rect)
+       label = self.result_font.render(text, True, config.color_result)
+       rect = label.get_rect(center=(config.width // 2, config.height // 2))
+       self.screen.blit(label, rect)
+
 
 
 class InputController:
@@ -151,8 +152,10 @@ class Game:
 
         # Pause (#4)
         self.paused = False
+        self.pause_reason = None  # None | "PAUSED" | "WAIT"
         self.pause_start_ms = 0
         self.paused_accum_ms = 0
+
 
     # -------------------- #1 Difficulty --------------------
     def _load_difficulty(self):
@@ -209,18 +212,21 @@ class Game:
             json.dump({"best_ms": ms}, f)
 
     # -------------------- #4 Pause --------------------
-    def toggle_pause(self):
-        # 시작 전 / 종료 후에는 pause 토글 의미 없음
-        if not self.started or self.board.game_over or self.board.win:
-            return
+    def toggle_pause(self, reason: str):
+     if not self.started or self.board.game_over or self.board.win:
+        return
 
-        now = pygame.time.get_ticks()
-        if not self.paused:
-            self.paused = True
-            self.pause_start_ms = now
-        else:
-            self.paused = False
-            self.paused_accum_ms += now - self.pause_start_ms
+     now = pygame.time.get_ticks()
+
+     if not self.paused:
+        self.paused = True
+        self.pause_reason = reason  # "PAUSED" or "WAIT"
+        self.pause_start_ms = now
+     else:
+        self.paused = False
+        self.paused_accum_ms += now - self.pause_start_ms
+        self.pause_reason = None
+
 
     # -------------------- Shared --------------------
     def reset(self):
@@ -239,8 +245,10 @@ class Game:
         self.highlight_until_ms = 0
 
         self.paused = False
+        self.pause_reason = None
         self.pause_start_ms = 0
         self.paused_accum_ms = 0
+
 
     def _elapsed_ms(self):
         if not self.started:
@@ -287,8 +295,9 @@ class Game:
                 self.renderer.draw_cell(c, r, (c, r) in self.highlight_targets)
 
         self.renderer.draw_result_overlay(self._result_text())
-        if self.paused:
-            self.renderer.draw_pause_overlay()
+        if self.paused and self.pause_reason:
+           self.renderer.draw_pause_overlay(self.pause_reason)
+
 
         pygame.display.flip()
 
@@ -309,7 +318,10 @@ class Game:
                 elif event.key == pygame.K_h:
                     self.use_hint()
                 elif event.key == pygame.K_p:
-                    self.toggle_pause()
+                    self.toggle_pause("PAUSED")
+                elif event.key == pygame.K_w:
+                    self.toggle_pause("WAIT")
+
 
             # pause 상태에서는 클릭 무시
             if event.type == pygame.MOUSEBUTTONDOWN and not self.paused:
