@@ -76,8 +76,9 @@ class Renderer:
 
             # QUESTION MARK
             elif cell.state.is_question:
-                q = self.font.render("?", True, config.color_header_text)
-                self.screen.blit(q, q.get_rect(center=rect.center))
+              q = self.font.render("?", True, config.color_question)
+              self.screen.blit(q, q.get_rect(center=rect.center))
+
 
         pygame.draw.rect(self.screen, config.color_grid, rect, 1)
 
