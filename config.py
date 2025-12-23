@@ -41,7 +41,10 @@ color_grid = (60, 64, 67)
 color_cell_hidden = (40, 44, 52)
 color_cell_revealed = (225, 228, 232)
 color_cell_mine = (220, 0, 0)
-color_flag = (255, 215, 0)
+# 기존
+color_flag = (220, 50, 50)   # 빨간 깃발
+# 추가
+color_question = (120, 120, 255)  # 물음표 전용 파란색
 color_text = (20, 20, 20)
 color_text_inv = (240, 240, 240)
 color_header_text = (240, 240, 240)

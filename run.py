@@ -37,14 +37,21 @@ class Renderer:
             base_color = config.color_highlight if highlighted else config.color_cell_hidden
             pygame.draw.rect(self.screen, base_color, rect)
 
+            # 깃발 그리기 (상세 로직 적용)
             if cell.state.is_flagged:
-                pole_x = rect.centerx
-                pygame.draw.line(self.screen, config.color_flag, (pole_x, rect.top + 4), (pole_x, rect.bottom - 4), 2)
+                flag_w = max(6, rect.width // 3)
+                flag_h = max(8, rect.height // 2)
+                pole_x = rect.left + rect.width // 3
+                pole_y = rect.top + 4
+                pygame.draw.line(self.screen, config.color_flag, (pole_x, pole_y), (pole_x, pole_y + flag_h), 2)
                 pygame.draw.polygon(self.screen, config.color_flag, [
-                    (pole_x, rect.top + 4), (pole_x + 8, rect.top + 8), (pole_x, rect.top + 12)
+                    (pole_x + 2, pole_y),
+                    (pole_x + 2 + flag_w, pole_y + flag_h // 3),
+                    (pole_x + 2, pole_y + flag_h // 2),
                 ])
+            # 물음표 그리기
             elif cell.state.is_question:
-                q = self.font.render("?", True, config.color_header_text)
+                q = self.font.render("?", True, config.color_question if hasattr(config, 'color_question') else (120, 120, 255))
                 self.screen.blit(q, q.get_rect(center=rect.center))
 
         pygame.draw.rect(self.screen, config.color_grid, rect, 1)
@@ -54,22 +61,21 @@ class Renderer:
         left = self.header_font.render(f"Mines: {remaining}", True, config.color_header_text)
         mid = self.header_font.render(f"Best: {best_text}", True, config.color_header_text)
         right = self.header_font.render(f"{difficulty_label}  Time: {time_text}", True, config.color_header_text)
-
         self.screen.blit(left, (10, 12))
         self.screen.blit(mid, (config.width // 2 - mid.get_width() // 2, 12))
         self.screen.blit(right, (config.width - right.get_width() - 10, 12))
+
+    def draw_pause_overlay(self, text: str) -> None:
+        overlay = pygame.Surface((config.width, config.height), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 150))
+        self.screen.blit(overlay, (0, 0))
+        label = self.result_font.render(text, True, config.color_result)
+        self.screen.blit(label, label.get_rect(center=(config.width // 2, config.height // 2)))
 
     def draw_result_overlay(self, text: str | None) -> None:
         if not text: return
         overlay = pygame.Surface((config.width, config.height), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, config.result_overlay_alpha))
-        self.screen.blit(overlay, (0, 0))
-        label = self.result_font.render(text, True, config.color_result)
-        self.screen.blit(label, label.get_rect(center=(config.width // 2, config.height // 2)))
-
-    def draw_pause_overlay(self, text: str) -> None:
-        overlay = pygame.Surface((config.width, config.height), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, 150))
         self.screen.blit(overlay, (0, 0))
         label = self.result_font.render(text, True, config.color_result)
         self.screen.blit(label, label.get_rect(center=(config.width // 2, config.height // 2)))
@@ -92,17 +98,13 @@ class InputController:
         game = self.game
         if button == config.mouse_left:
             if not game.started:
-                game.started = True
-                game.start_ticks_ms = pygame.time.get_ticks()
+                game.started, game.start_ticks_ms = True, pygame.time.get_ticks()
             game.board.reveal(col, row)
         elif button == config.mouse_right:
             game.board.toggle_flag(col, row)
-        elif button == config.mouse_middle:
+        elif button == config.mouse_middle: # 휠 클릭 기능 유지
             neighbors = game.board.neighbors(col, row)
-            game.highlight_targets = {
-                (nc, nr) for (nc, nr) in neighbors
-                if not game.board.cells[game.board.index(nc, nr)].state.is_revealed
-            }
+            game.highlight_targets = {(nc, nr) for (nc, nr) in neighbors if not game.board.cells[game.board.index(nc, nr)].state.is_revealed}
             game.highlight_until_ms = pygame.time.get_ticks() + config.highlight_duration_ms
 
 # ============================ Game ============================
@@ -134,8 +136,6 @@ class Game:
     def _load_difficulty(self):
         preset = config.DIFFICULTY_PRESETS[self.difficulty]
         self.cols, self.rows, self.mines = preset["cols"], preset["rows"], preset["mines"]
-        
-        # 전역 config 동기화
         config.cols, config.rows, config.num_mines = self.cols, self.rows, self.mines
         config.width = config.margin_left + self.cols * config.cell_size + config.margin_right
         config.height = config.margin_top + self.rows * config.cell_size + config.margin_bottom
@@ -149,12 +149,9 @@ class Game:
     def use_hint(self):
         if self.hint_used or self.board.game_over or self.board.win: return
         safe = [(c, r) for r in range(self.board.rows) for c in range(self.board.cols)
-                if not self.board.cells[self.board.index(c, r)].state.is_revealed 
-                and not self.board.cells[self.board.index(c, r)].state.is_mine]
+                if not self.board.cells[self.board.index(c, r)].state.is_revealed and not self.board.cells[self.board.index(c, r)].state.is_mine]
         if not safe: return
-        self.highlight_targets = {random.choice(safe)}
-        self.highlight_until_ms = pygame.time.get_ticks() + 2000
-        self.hint_used = True
+        self.highlight_targets, self.highlight_until_ms, self.hint_used = {random.choice(safe)}, pygame.time.get_ticks() + 2000, True
 
     def toggle_pause(self, reason: str = "PAUSED"):
         if not self.started or self.board.game_over or self.board.win: return
@@ -171,12 +168,9 @@ class Game:
         self.board = Board(self.cols, self.rows, self.mines)
         self.renderer.board = self.board
         self.started = False
-        self.start_ticks_ms = self.end_ticks_ms = 0
-        self.hint_used = False
+        self.start_ticks_ms = self.end_ticks_ms = self.hint_used = self.highlight_until_ms = 0
         self.highlight_targets.clear()
-        self.highlight_until_ms = 0
-        self.paused = False
-        self.pause_reason = None
+        self.paused, self.pause_reason = False, None
         self.pause_start_ms = self.paused_accum_ms = 0
 
     def _load_best_times(self) -> dict:
@@ -205,8 +199,7 @@ class Game:
     def draw(self):
         self.screen.fill(config.color_bg)
         now = pygame.time.get_ticks()
-        if now > self.highlight_until_ms:
-            self.highlight_targets.clear()
+        if now > self.highlight_until_ms: self.highlight_targets.clear()
         
         remaining = max(0, self.mines - self.board.flagged_count())
         time_text = self._format_time(self._elapsed_ms())
@@ -218,11 +211,9 @@ class Game:
 
         for r in range(self.board.rows):
             for c in range(self.board.cols):
-                is_high = (c, r) in self.highlight_targets
-                self.renderer.draw_cell(c, r, is_high)
+                self.renderer.draw_cell(c, r, (c, r) in self.highlight_targets)
         
-        result = "GAME CLEAR" if self.board.win else ("GAME OVER" if self.board.game_over else None)
-        self.renderer.draw_result_overlay(result)
+        self.renderer.draw_result_overlay("GAME CLEAR" if self.board.win else ("GAME OVER" if self.board.game_over else None))
         if self.paused and self.pause_reason:
             self.renderer.draw_pause_overlay(self.pause_reason)
         pygame.display.flip()
@@ -237,7 +228,7 @@ class Game:
                 elif event.key == pygame.K_3: self.set_difficulty("HARD")
                 elif event.key == pygame.K_h: self.use_hint()
                 elif event.key == pygame.K_p: self.toggle_pause("PAUSED")
-                elif event.key == pygame.K_w: self.toggle_pause("WAIT") # 'W' 키로 대기 모드
+                elif event.key == pygame.K_w: self.toggle_pause("WAIT") # 대기 모드
             if event.type == pygame.MOUSEBUTTONDOWN and not self.paused:
                 self.input.handle_mouse(event.pos, event.button)
 
