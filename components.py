@@ -23,14 +23,24 @@ class CellState:
         is_mine: Whether this cell contains a mine.
         is_revealed: Whether the cell has been revealed to the player.
         is_flagged: Whether the player flagged this cell as a mine.
+        is_question: Whether the player marked this cell as '?'.
         adjacent: Number of adjacent mines in the 8 neighboring cells.
     """
 
-    def __init__(self, is_mine: bool = False, is_revealed: bool = False, is_flagged: bool = False, adjacent: int = 0):
+    def __init__(
+        self,
+        is_mine: bool = False,
+        is_revealed: bool = False,
+        is_flagged: bool = False,
+        is_question: bool = False,
+        adjacent: int = 0,
+    ):
         self.is_mine = is_mine
         self.is_revealed = is_revealed
         self.is_flagged = is_flagged
+        self.is_question = is_question
         self.adjacent = adjacent
+
 
 
 class Cell:
@@ -147,13 +157,25 @@ class Board:
     def toggle_flag(self, col: int, row: int) -> None:
         if not self.is_inbounds(col, row):
             return
-        
+
         idx = self.index(col, row)
         cell = self.cells[idx]
-        
-        # 이미 오픈된 셀에는 깃발을 꽂을 수 없음
-        if not cell.state.is_revealed:
-            cell.state.is_flagged = not cell.state.is_flagged
+
+        # 이미 열린 셀은 표식 불가
+        if cell.state.is_revealed:
+          return
+
+        # 없음 -> 깃발 -> 물음표 -> 없음
+        if (not cell.state.is_flagged) and (not cell.state.is_question):
+          cell.state.is_flagged = True
+          cell.state.is_question = False
+        elif cell.state.is_flagged:
+          cell.state.is_flagged = False
+          cell.state.is_question = True
+        else:  # question 상태
+          cell.state.is_flagged = False
+          cell.state.is_question = False
+
 
     def flagged_count(self) -> int:
         count = 0
