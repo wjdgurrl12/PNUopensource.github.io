@@ -299,7 +299,7 @@ class Game:
                     self.set_difficulty("NORMAL")
                 elif event.key == pygame.K_3:
                     self.set_difficulty("HARD")
-                elif event.key == pygame.K_h:
+                elif event.key == pygame.K_q:
                     self.use_hint()
 
             if event.type == pygame.MOUSEBUTTONDOWN:
