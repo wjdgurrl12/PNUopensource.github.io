@@ -137,8 +137,8 @@ class Game:
         # Hint (#2)
         self.hint_used = False
 
-        # High score (#3)
-        self.best_ms = self._load_best_time()
+        # High score (#3) - difficulty별 기록
+        self.best_times = self._load_best_times()
 
     def _load_difficulty(self):
         preset = config.DIFFICULTY_PRESETS[self.difficulty]
@@ -166,8 +166,8 @@ class Game:
             (c, r)
             for r in range(self.board.rows)
             for c in range(self.board.cols)
-            if not self.board.cells[self.board.index(c, r)].state.is_revealed
-            and not self.board.cells[self.board.index(c, r)].state.is_mine
+            if (not self.board.cells[self.board.index(c, r)].state.is_revealed)
+            and (not self.board.cells[self.board.index(c, r)].state.is_mine)
         ]
         if not safe:
             return
@@ -176,28 +176,35 @@ class Game:
         self.highlight_until_ms = pygame.time.get_ticks() + 2000
         self.hint_used = True
 
-    def _load_best_time(self):
+    def _load_best_times(self) -> dict:
         if not os.path.exists("best_time.json"):
-            return None
+            return {}
         try:
-            with open("best_time.json", "r") as f:
-                return json.load(f).get("best_ms")
+            with open("best_time.json", "r", encoding="utf-8") as f:
+                data = json.load(f)
+                # 파일이 dict가 아니면 방어
+                return data if isinstance(data, dict) else {}
         except Exception:
-            return None
+            return {}
 
-    def _save_best_time(self, ms):
-        with open("best_time.json", "w") as f:
-            json.dump({"best_ms": ms}, f)
+    def _save_best_times(self) -> None:
+        with open("best_time.json", "w", encoding="utf-8") as f:
+            json.dump(self.best_times, f, ensure_ascii=False, indent=2)
 
     def reset(self):
         self._load_difficulty()
         self.screen = pygame.display.set_mode(config.display_dimension)
+
         self.board = Board(self.cols, self.rows, self.mines)
         self.renderer.board = self.board
+
         self.started = False
         self.start_ticks_ms = 0
         self.end_ticks_ms = 0
+
         self.hint_used = False
+        self.highlight_targets.clear()
+        self.highlight_until_ms = 0
 
     def _elapsed_ms(self):
         if not self.started:
@@ -207,7 +214,7 @@ class Game:
         return pygame.time.get_ticks() - self.start_ticks_ms
 
     def _format_time(self, ms):
-        s = ms // 1000
+        s = max(0, ms) // 1000
         return f"{s//60:02d}:{s%60:02d}"
 
     def draw(self):
@@ -218,7 +225,9 @@ class Game:
 
         remaining = max(0, self.mines - self.board.flagged_count())
         time_text = self._format_time(self._elapsed_ms())
-        best_text = "--:--" if self.best_ms is None else self._format_time(self.best_ms)
+
+        best_ms = self.best_times.get(self.difficulty)
+        best_text = "--:--" if best_ms is None else self._format_time(best_ms)
 
         self.renderer.draw_header(remaining, time_text, best_text)
 
@@ -226,13 +235,15 @@ class Game:
             for c in range(self.board.cols):
                 self.renderer.draw_cell(c, r, (c, r) in self.highlight_targets)
 
-        self.renderer.draw_result_overlay("GAME CLEAR" if self.board.win else "GAME OVER" if self.board.game_over else None)
+        overlay = "GAME CLEAR" if self.board.win else ("GAME OVER" if self.board.game_over else None)
+        self.renderer.draw_result_overlay(overlay)
         pygame.display.flip()
 
     def run_step(self):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False
+
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_r:
                     self.reset()
@@ -244,17 +255,21 @@ class Game:
                     self.set_difficulty("HARD")
                 elif event.key == pygame.K_h:
                     self.use_hint()
+
             if event.type == pygame.MOUSEBUTTONDOWN:
                 self.input.handle_mouse(event.pos, event.button)
 
+        # 종료 시점 고정
         if (self.board.game_over or self.board.win) and self.started and not self.end_ticks_ms:
             self.end_ticks_ms = pygame.time.get_ticks()
 
+        # 승리 시 best 갱신 (difficulty별)
         if self.board.win and self.end_ticks_ms:
-            elapsed = self.end_ticks_ms - self.start_ticks_ms
-            if self.best_ms is None or elapsed < self.best_ms:
-                self.best_ms = elapsed
-                self._save_best_time(elapsed)
+            elapsed = self._elapsed_ms()
+            prev = self.best_times.get(self.difficulty)
+            if prev is None or elapsed < prev:
+                self.best_times[self.difficulty] = elapsed
+                self._save_best_times()
 
         self.draw()
         self.clock.tick(config.fps)
