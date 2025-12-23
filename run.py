@@ -1,7 +1,3 @@
-"""
-Pygame presentation layer for Minesweeper.
-"""
-
 import sys
 import pygame
 import random
@@ -38,18 +34,14 @@ class Renderer:
                 label = self.font.render(str(cell.state.adjacent), True, color)
                 self.screen.blit(label, label.get_rect(center=rect.center))
         else:
-            # 하이라이트 또는 기본 색상
             base_color = config.color_highlight if highlighted else config.color_cell_hidden
             pygame.draw.rect(self.screen, base_color, rect)
 
             if cell.state.is_flagged:
-                # 깃발 그리기
                 pole_x = rect.centerx
                 pygame.draw.line(self.screen, config.color_flag, (pole_x, rect.top + 4), (pole_x, rect.bottom - 4), 2)
                 pygame.draw.polygon(self.screen, config.color_flag, [
-                    (pole_x, rect.top + 4),
-                    (pole_x + 8, rect.top + 8),
-                    (pole_x, rect.top + 12)
+                    (pole_x, rect.top + 4), (pole_x + 8, rect.top + 8), (pole_x, rect.top + 12)
                 ])
             elif cell.state.is_question:
                 q = self.font.render("?", True, config.color_header_text)
@@ -57,11 +49,11 @@ class Renderer:
 
         pygame.draw.rect(self.screen, config.color_grid, rect, 1)
 
-    def draw_header(self, remaining: int, time_text: str, best_text: str) -> None:
+    def draw_header(self, remaining: int, time_text: str, best_text: str, difficulty_label: str) -> None:
         pygame.draw.rect(self.screen, config.color_header, Rect(0, 0, config.width, config.margin_top - 4))
         left = self.header_font.render(f"Mines: {remaining}", True, config.color_header_text)
         mid = self.header_font.render(f"Best: {best_text}", True, config.color_header_text)
-        right = self.header_font.render(f"Time: {time_text}", True, config.color_header_text)
+        right = self.header_font.render(f"{difficulty_label}  Time: {time_text}", True, config.color_header_text)
 
         self.screen.blit(left, (10, 12))
         self.screen.blit(mid, (config.width // 2 - mid.get_width() // 2, 12))
@@ -75,11 +67,11 @@ class Renderer:
         label = self.result_font.render(text, True, config.color_result)
         self.screen.blit(label, label.get_rect(center=(config.width // 2, config.height // 2)))
 
-    def draw_pause_overlay(self) -> None:
+    def draw_pause_overlay(self, text: str) -> None:
         overlay = pygame.Surface((config.width, config.height), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 150))
         self.screen.blit(overlay, (0, 0))
-        label = self.result_font.render("PAUSED", True, config.color_result)
+        label = self.result_font.render(text, True, config.color_result)
         self.screen.blit(label, label.get_rect(center=(config.width // 2, config.height // 2)))
 
 # ============================ Input ============================
@@ -105,7 +97,7 @@ class InputController:
             game.board.reveal(col, row)
         elif button == config.mouse_right:
             game.board.toggle_flag(col, row)
-        elif button == config.mouse_middle: # 휠 클릭 하이라이트
+        elif button == config.mouse_middle:
             neighbors = game.board.neighbors(col, row)
             game.highlight_targets = {
                 (nc, nr) for (nc, nr) in neighbors
@@ -126,6 +118,7 @@ class Game:
         self.renderer = Renderer(self.screen, self.board)
         self.input = InputController(self)
         
+        # 통합된 State 관리
         self.started = False
         self.start_ticks_ms = 0
         self.end_ticks_ms = 0
@@ -133,6 +126,7 @@ class Game:
         self.highlight_until_ms = 0
         self.hint_used = False
         self.paused = False
+        self.pause_reason = None
         self.pause_start_ms = 0
         self.paused_accum_ms = 0
         self.best_times = self._load_best_times()
@@ -140,6 +134,9 @@ class Game:
     def _load_difficulty(self):
         preset = config.DIFFICULTY_PRESETS[self.difficulty]
         self.cols, self.rows, self.mines = preset["cols"], preset["rows"], preset["mines"]
+        
+        # 전역 config 동기화
+        config.cols, config.rows, config.num_mines = self.cols, self.rows, self.mines
         config.width = config.margin_left + self.cols * config.cell_size + config.margin_right
         config.height = config.margin_top + self.rows * config.cell_size + config.margin_bottom
         config.display_dimension = (config.width, config.height)
@@ -159,13 +156,13 @@ class Game:
         self.highlight_until_ms = pygame.time.get_ticks() + 2000
         self.hint_used = True
 
-    def toggle_pause(self):
+    def toggle_pause(self, reason: str = "PAUSED"):
         if not self.started or self.board.game_over or self.board.win: return
         now = pygame.time.get_ticks()
         if not self.paused:
-            self.paused, self.pause_start_ms = True, now
+            self.paused, self.pause_reason, self.pause_start_ms = True, reason, now
         else:
-            self.paused = False
+            self.paused, self.pause_reason = False, None
             self.paused_accum_ms += now - self.pause_start_ms
 
     def reset(self):
@@ -179,6 +176,7 @@ class Game:
         self.highlight_targets.clear()
         self.highlight_until_ms = 0
         self.paused = False
+        self.pause_reason = None
         self.pause_start_ms = self.paused_accum_ms = 0
 
     def _load_best_times(self) -> dict:
@@ -215,7 +213,8 @@ class Game:
         best_ms = self.best_times.get(self.difficulty)
         best_text = "--:--" if best_ms is None else self._format_time(best_ms)
         
-        self.renderer.draw_header(remaining, time_text, best_text)
+        difficulty_map = {"EASY": "Lv.1", "NORMAL": "Lv.2", "HARD": "Lv.3"}
+        self.renderer.draw_header(remaining, time_text, best_text, difficulty_map.get(self.difficulty, ""))
 
         for r in range(self.board.rows):
             for c in range(self.board.cols):
@@ -224,7 +223,8 @@ class Game:
         
         result = "GAME CLEAR" if self.board.win else ("GAME OVER" if self.board.game_over else None)
         self.renderer.draw_result_overlay(result)
-        if self.paused: self.renderer.draw_pause_overlay()
+        if self.paused and self.pause_reason:
+            self.renderer.draw_pause_overlay(self.pause_reason)
         pygame.display.flip()
 
     def run_step(self):
@@ -236,7 +236,8 @@ class Game:
                 elif event.key == pygame.K_2: self.set_difficulty("NORMAL")
                 elif event.key == pygame.K_3: self.set_difficulty("HARD")
                 elif event.key == pygame.K_h: self.use_hint()
-                elif event.key == pygame.K_p: self.toggle_pause()
+                elif event.key == pygame.K_p: self.toggle_pause("PAUSED")
+                elif event.key == pygame.K_w: self.toggle_pause("WAIT") # 'W' 키로 대기 모드
             if event.type == pygame.MOUSEBUTTONDOWN and not self.paused:
                 self.input.handle_mouse(event.pos, event.button)
 
